@@ -7,24 +7,27 @@ import asyncio
 import random
 import math
 from collections import defaultdict
-import config
+from config import (
+    DISCORD_TOKEN,
+    OWNER_ID,
+    GUILD_ID,
+    MOD_ROLE_ID,
+    VERIFIED_ROLE_NAME,
+    CONFESSION_CHANNEL_ID,
+    GAME_CHANNEL_ID,
+    REMINDER_CHANNEL_ID,
+    WELCOME_CHANNEL_ID,
+    GOODBYE_CHANNEL_ID,
+    LEVELUP_CHANNEL_ID,
+    HIGHLIGHTS_CHANNEL_ID,
+)
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-OWNER_ID = 1439993397963395122
-GUILD_ID = 1505844271855435826
-MOD_ROLE_ID = 1359384902847565846
-CONFESSION_CHANNEL_ID = 1359194169964237104
-GAME_CHANNEL_ID = 1359386224539729967
-REMINDER_CHANNEL_ID = 1359386488546263221
-WELCOME_CHANNEL_ID = 1359399333421912104
-GOODBYE_CHANNEL_ID = 1359399374660304906
-LEVELUP_CHANNEL_ID = 1360201583802978365
-HIGHLIGHTS_CHANNEL_ID = 1360164383250190415
-VERIFIED_ROLE_NAME = "Verified"
 FISH_SPAWN_THRESHOLD = 200
 XP_PER_MESSAGE = 5
+HIGHLIGHTS_REACTION_THRESHOLD = 2
 
 fish_spawned = False
 fish_spawn_lock = asyncio.Lock()
@@ -32,9 +35,14 @@ fish_leaderboard = defaultdict(int)
 message_count = 0
 user_xp = defaultdict(lambda: {"xp": 0, "level": 1})
 active_hangman_games = {}
-banned_words = ["fuck", "dick", "nigger", "nigga", "sex"]
+banned_words = {"fuck", "dick", "nigger", "nigga", "sex"}
 
-hangman_word_pool = ["discord", "python", "hangman", "bot", "server"]
+hangman_word_pool = [
+    "python", "discord", "server", "keyboard", "monitor",
+    "developer", "gaming", "stream", "message", "reaction",
+    "moderator", "hangman", "confetti", "timeout", "community",
+    "database", "network", "password", "channel", "website",
+]
 
 roleplay_gifs = {
     "kiss": "https://media.tenor.com/Tt72qF0Uk8sAAAAC/milk-and-mocha-bear.gif",
@@ -142,6 +150,10 @@ class VerificationView(View):
             await interaction.response.send_message("You have been verified!", ephemeral=True)
 
 
+def is_moderator(interaction: discord.Interaction) -> bool:
+    return discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID) is not None
+
+
 def calculate_level(xp):
     return int(math.sqrt(xp) // 10) + 1
 
@@ -206,7 +218,7 @@ async def on_reaction_add(reaction, user):
         return
 
     non_bot_reactors = [u async for u in reaction.users() if not u.bot]
-    if len(non_bot_reactors) < 2:
+    if len(non_bot_reactors) < HIGHLIGHTS_REACTION_THRESHOLD:
         return
 
     for existing_reaction in reaction.message.reactions:
@@ -334,38 +346,35 @@ async def level(interaction: discord.Interaction):
     )
 
 
-@bot.tree.command(name="kiss", description="Kiss another member")
-@app_commands.describe(member="The member you want to kiss")
-async def kiss(interaction: discord.Interaction, member: discord.Member):
-    embed = discord.Embed().set_image(url=roleplay_gifs["kiss"])
-    await interaction.response.send_message(f"{interaction.user.mention} kissed {member.mention}! 💋", embed=embed)
+ROLEPLAY_ACTIONS = {
+    "kiss":   ("kissed",         "💋"),
+    "hug":    ("hugged",         "🤗"),
+    "cuddle": ("cuddled",        "🧸"),
+    "love":   ("showed love to", "❤️"),
+}
 
 
-@bot.tree.command(name="hug", description="Hug another member")
-@app_commands.describe(member="The member you want to hug")
-async def hug(interaction: discord.Interaction, member: discord.Member):
-    embed = discord.Embed().set_image(url=roleplay_gifs["hug"])
-    await interaction.response.send_message(f"{interaction.user.mention} hugged {member.mention}! 🤗", embed=embed)
-
-
-@bot.tree.command(name="cuddle", description="Cuddle another member")
-@app_commands.describe(member="The member you want to cuddle")
-async def cuddle(interaction: discord.Interaction, member: discord.Member):
-    embed = discord.Embed().set_image(url=roleplay_gifs["cuddle"])
-    await interaction.response.send_message(f"{interaction.user.mention} cuddled {member.mention}! 🧸", embed=embed)
-
-
-@bot.tree.command(name="love", description="Show love to another member")
-@app_commands.describe(member="The member you want to show love to")
-async def love(interaction: discord.Interaction, member: discord.Member):
-    embed = discord.Embed().set_image(url=roleplay_gifs["love"])
-    await interaction.response.send_message(f"{interaction.user.mention} loves {member.mention}! ❤️", embed=embed)
+@bot.tree.command(name="roleplay", description="Send a roleplay action to another member")
+@app_commands.describe(action="The action to perform", member="The target member")
+@app_commands.choices(action=[
+    app_commands.Choice(name="kiss", value="kiss"),
+    app_commands.Choice(name="hug", value="hug"),
+    app_commands.Choice(name="cuddle", value="cuddle"),
+    app_commands.Choice(name="love", value="love"),
+])
+async def roleplay(interaction: discord.Interaction, action: app_commands.Choice[str], member: discord.Member):
+    verb, emoji = ROLEPLAY_ACTIONS[action.value]
+    embed = discord.Embed().set_image(url=roleplay_gifs[action.value])
+    await interaction.response.send_message(
+        f"{interaction.user.mention} {verb} {member.mention}! {emoji}",
+        embed=embed,
+    )
 
 
 @bot.tree.command(name="kick", description="Kick a member from the server")
 @app_commands.describe(member="The member to kick", reason="Reason for the kick")
 async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if not discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID):
+    if not is_moderator(interaction):
         await interaction.response.send_message("You don't have permission to kick members.", ephemeral=True)
         return
     await member.kick(reason=reason)
@@ -375,7 +384,7 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
 @bot.tree.command(name="ban", description="Permanently ban a member")
 @app_commands.describe(member="The member to ban", reason="Reason for the ban")
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if not discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID):
+    if not is_moderator(interaction):
         await interaction.response.send_message("You don't have permission to ban members.", ephemeral=True)
         return
     await member.ban(reason=reason)
@@ -385,7 +394,7 @@ async def ban(interaction: discord.Interaction, member: discord.Member, reason: 
 @bot.tree.command(name="timeout", description="Temporarily mute a member")
 @app_commands.describe(member="The member to timeout", minutes="Duration in minutes", reason="Reason for the timeout")
 async def timeout(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "No reason provided"):
-    if not discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID):
+    if not is_moderator(interaction):
         await interaction.response.send_message("You don't have permission to timeout members.", ephemeral=True)
         return
     await member.timeout(timedelta(minutes=minutes), reason=reason)
@@ -451,4 +460,4 @@ async def guess(interaction: discord.Interaction, letter: str):
     await interaction.response.send_message(embed=embed)
 
 
-bot.run(config.DISCORD_TOKEN)
+bot.run(DISCORD_TOKEN)
