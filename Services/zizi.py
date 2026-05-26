@@ -5,8 +5,6 @@ from discord import app_commands
 from datetime import timedelta
 import asyncio
 import random
-import math
-from collections import defaultdict
 from config import (
     DISCORD_TOKEN,
     OWNER_ID,
@@ -17,20 +15,17 @@ from config import (
     REMINDER_CHANNEL_ID,
     WELCOME_CHANNEL_ID,
     GOODBYE_CHANNEL_ID,
-    LEVELUP_CHANNEL_ID,
     HIGHLIGHTS_CHANNEL_ID,
 )
 from filter import FilterCog, banned_words
 from hangman import HangmanCog
 from fishgame import FishCog
+from xpsystem import XPCog
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-XP_PER_MESSAGE = 5
 HIGHLIGHTS_REACTION_THRESHOLD = 2
-
-user_xp = defaultdict(lambda: {"xp": 0, "level": 1})
 
 roleplay_gifs = {
     "kiss":   "https://media.tenor.com/Tt72qF0Uk8sAAAAC/milk-and-mocha-bear.gif",
@@ -88,10 +83,6 @@ def is_moderator(interaction: discord.Interaction) -> bool:
     )
 
 
-def calculate_level(xp):
-    return int(math.sqrt(xp) // 10) + 1
-
-
 @bot.event
 async def on_ready():
     await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
@@ -108,14 +99,6 @@ async def on_message(message):
 
     if any(word in message.content.lower() for word in banned_words):
         return
-
-    if message.channel.id == LEVELUP_CHANNEL_ID:
-        player_data = user_xp[message.author.id]
-        player_data["xp"] += XP_PER_MESSAGE
-        new_level = calculate_level(player_data["xp"])
-        if new_level > player_data["level"]:
-            player_data["level"] = new_level
-            await message.channel.send(f"{message.author.mention} leveled up to **Level {new_level}**!")
 
     await bot.process_commands(message)
 
@@ -250,17 +233,6 @@ async def purge(interaction: discord.Interaction, amount: int):
     await interaction.response.send_message(f"Deleted {len(deleted)} messages.", ephemeral=True)
 
 
-@bot.tree.command(name="level", description="Check your current level and XP")
-async def level(interaction: discord.Interaction):
-    if interaction.channel.id != LEVELUP_CHANNEL_ID:
-        await interaction.response.send_message("You can only check your level in the XP channel.", ephemeral=True)
-        return
-    player_data = user_xp[interaction.user.id]
-    await interaction.response.send_message(
-        f"You are **Level {player_data['level']}** with **{player_data['xp']} XP**."
-    )
-
-
 ROLEPLAY_ACTIONS = {
     "kiss":   ("kissed",         "💋"),
     "hug":    ("hugged",         "🤗"),
@@ -321,6 +293,7 @@ async def main():
         await bot.add_cog(FilterCog(bot))
         await bot.add_cog(FishCog(bot))
         await bot.add_cog(HangmanCog(bot))
+        await bot.add_cog(XPCog(bot))
         await bot.start(DISCORD_TOKEN)
 
 
