@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands, tasks
-from discord.ui import Button, View
+from discord.ui import View
 from discord import app_commands
 from datetime import timedelta
 import asyncio
@@ -14,41 +14,29 @@ from config import (
     MOD_ROLE_ID,
     VERIFIED_ROLE_NAME,
     CONFESSION_CHANNEL_ID,
-    GAME_CHANNEL_ID,
     REMINDER_CHANNEL_ID,
     WELCOME_CHANNEL_ID,
     GOODBYE_CHANNEL_ID,
     LEVELUP_CHANNEL_ID,
     HIGHLIGHTS_CHANNEL_ID,
 )
+from filter import FilterCog, banned_words
+from hangman import HangmanCog
+from fishgame import FishCog
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-FISH_SPAWN_THRESHOLD = 200
 XP_PER_MESSAGE = 5
 HIGHLIGHTS_REACTION_THRESHOLD = 2
 
-fish_spawned = False
-fish_spawn_lock = asyncio.Lock()
-fish_leaderboard = defaultdict(int)
-message_count = 0
 user_xp = defaultdict(lambda: {"xp": 0, "level": 1})
-active_hangman_games = {}
-banned_words = {"fuck", "dick", "nigger", "nigga", "sex"}
-
-hangman_word_pool = [
-    "python", "discord", "server", "keyboard", "monitor",
-    "developer", "gaming", "stream", "message", "reaction",
-    "moderator", "hangman", "confetti", "timeout", "community",
-    "database", "network", "password", "channel", "website",
-]
 
 roleplay_gifs = {
-    "kiss": "https://media.tenor.com/Tt72qF0Uk8sAAAAC/milk-and-mocha-bear.gif",
-    "hug": "https://media.tenor.com/vYg4u4xPIScAAAAC/milk-and-mocha.gif",
+    "kiss":   "https://media.tenor.com/Tt72qF0Uk8sAAAAC/milk-and-mocha-bear.gif",
+    "hug":    "https://media.tenor.com/vYg4u4xPIScAAAAC/milk-and-mocha.gif",
     "cuddle": "https://media.tenor.com/wCRu3cqJAgcAAAAC/milk-and-mocha-bear-love.gif",
-    "love": "https://media.tenor.com/_4YgA77ExHEAAAAC/milk-and-mocha-love.gif",
+    "love":   "https://media.tenor.com/_4YgA77ExHEAAAAC/milk-and-mocha-love.gif",
 }
 
 joke_list = [
@@ -64,73 +52,16 @@ roast_lines = [
 ]
 
 welcome_templates = [
-    "Hey {mention}, welcome to **{guild}**! 🎉",
-    "{mention} just arrived! Let's give them a warm welcome 💕",
-    "A new star has joined us! 🌟 Say hi to {mention}!",
+    "Hey {mention}, welcome to **{guild}**!",
+    "{mention} just arrived! Let's give them a warm welcome.",
+    "A new star has joined us! Say hi to {mention}!",
 ]
 
 goodbye_templates = [
-    "{mention} has left the server... 💔",
-    "We just lost a star. Bye {name}! 🌙",
-    "{name} said goodbye. We'll miss you 😢",
+    "{mention} has left the server...",
+    "We just lost a star. Bye {name}!",
+    "{name} said goodbye. We'll miss you.",
 ]
-
-
-class HangmanGame:
-    STAGES = [
-        "```\n\n\n\n\n=====\n```",
-        "```\n |\n |\n |\n |\n=====\n```",
-        "```\n +---+\n |\n |\n |\n |\n=====\n```",
-        "```\n +---+\n |   O\n |\n |\n |\n=====\n```",
-        "```\n +---+\n |   O\n |   |\n |   |\n |\n=====\n```",
-        "```\n +---+\n |   O\n |  /|\\\n |   |\n |\n=====\n```",
-        "```\n +---+\n |   O\n |  /|\\\n |   |\n |  / \\\n=====\n```",
-    ]
-
-    def __init__(self, word):
-        self.word = word
-        self.guessed_letters = set()
-        self.remaining_tries = 6
-
-    def display_word(self):
-        return " ".join([letter if letter in self.guessed_letters else "_" for letter in self.word])
-
-    def guess_letter(self, letter):
-        letter = letter.lower()
-        if letter in self.guessed_letters:
-            return False, "You already guessed that letter."
-        self.guessed_letters.add(letter)
-        if letter not in self.word:
-            self.remaining_tries -= 1
-            return False, f"Wrong guess. {self.remaining_tries} tries remaining."
-        return True, "Correct!"
-
-    def is_won(self):
-        return all(letter in self.guessed_letters for letter in self.word)
-
-    def is_lost(self):
-        return self.remaining_tries <= 0
-
-    def get_stage_art(self):
-        return self.STAGES[6 - self.remaining_tries]
-
-
-class FishButton(View):
-    def __init__(self):
-        super().__init__(timeout=30)
-        self.already_caught = False
-
-    @discord.ui.button(label="Catch 🐟", style=discord.ButtonStyle.green)
-    async def catch_fish(self, interaction: discord.Interaction, button: Button):
-        if self.already_caught:
-            await interaction.response.send_message("Someone already caught the fish!", ephemeral=True)
-            return
-        self.already_caught = True
-        fish_leaderboard[interaction.user.id] += 1
-        await interaction.response.edit_message(
-            content=f"{interaction.user.mention} caught the fish! 🎉 Total catches: {fish_leaderboard[interaction.user.id]}",
-            view=None,
-        )
 
 
 class VerificationView(View):
@@ -151,25 +82,14 @@ class VerificationView(View):
 
 
 def is_moderator(interaction: discord.Interaction) -> bool:
-    return discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID) is not None
+    return (
+        interaction.user.id == OWNER_ID
+        or discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID) is not None
+    )
 
 
 def calculate_level(xp):
     return int(math.sqrt(xp) // 10) + 1
-
-
-async def try_spawn_fish(channel):
-    global fish_spawned
-    async with fish_spawn_lock:
-        if fish_spawned:
-            return
-        fish_spawned = True
-        fish_view = FishButton()
-        await channel.send("🐟 A wild fish has appeared! Be the first to catch it!", view=fish_view)
-        await asyncio.sleep(50)
-        if not fish_view.already_caught:
-            await channel.send("The fish escaped... 🐟💨")
-        fish_spawned = False
 
 
 @bot.event
@@ -183,19 +103,11 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    global message_count
     if message.author.bot:
         return
 
     if any(word in message.content.lower() for word in banned_words):
-        await message.delete()
-        await message.channel.send(f"{message.author.mention}, watch your language!", delete_after=3)
         return
-
-    message_count += 1
-    if message_count >= FISH_SPAWN_THRESHOLD:
-        message_count = 0
-        await try_spawn_fish(message.channel)
 
     if message.channel.id == LEVELUP_CHANNEL_ID:
         player_data = user_xp[message.author.id]
@@ -203,7 +115,7 @@ async def on_message(message):
         new_level = calculate_level(player_data["xp"])
         if new_level > player_data["level"]:
             player_data["level"] = new_level
-            await message.channel.send(f"🎉 {message.author.mention} leveled up to **Level {new_level}**!")
+            await message.channel.send(f"{message.author.mention} leveled up to **Level {new_level}**!")
 
     await bot.process_commands(message)
 
@@ -237,11 +149,14 @@ async def on_reaction_add(reaction, user):
         icon_url=reaction.message.author.avatar.url if reaction.message.author.avatar else None,
     )
     highlight_embed.add_field(name="Channel", value=reaction.message.channel.mention)
-    highlight_embed.add_field(name="Jump to Message", value=f"[Click here]({reaction.message.jump_url})", inline=False)
+    highlight_embed.add_field(
+        name="Jump to Message",
+        value=f"[Click here]({reaction.message.jump_url})",
+        inline=False,
+    )
     if reaction.message.attachments:
         highlight_embed.set_image(url=reaction.message.attachments[0].url)
-    highlight_embed.set_footer(text="⭐ Highlighted by the community")
-
+    highlight_embed.set_footer(text="Highlighted by the community")
     await highlights_channel.send(embed=highlight_embed)
 
 
@@ -257,11 +172,11 @@ async def on_member_join(member):
     )
     human_member_count = len([m for m in member.guild.members if not m.bot])
 
-    embed = discord.Embed(title="🌸 Welcome Aboard!", description=welcome_text, color=discord.Color.blurple())
+    embed = discord.Embed(title="Welcome!", description=welcome_text, color=discord.Color.blurple())
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="📥 Joined At", value=discord.utils.format_dt(member.joined_at, style="F"), inline=True)
-    embed.add_field(name="👥 Member Count", value=str(human_member_count), inline=True)
-    embed.set_footer(text=f"We're glad you're here, {member.name}! 💐")
+    embed.add_field(name="Joined At", value=discord.utils.format_dt(member.joined_at, style="F"), inline=True)
+    embed.add_field(name="Member Count", value=str(human_member_count), inline=True)
+    embed.set_footer(text=f"We're glad you're here, {member.name}!")
     await channel.send(embed=embed)
 
 
@@ -277,11 +192,11 @@ async def on_member_remove(member):
     )
     human_member_count = len([m for m in member.guild.members if not m.bot])
 
-    embed = discord.Embed(title="💨 Someone Left...", description=goodbye_text, color=discord.Color.red())
+    embed = discord.Embed(title="Someone Left...", description=goodbye_text, color=discord.Color.red())
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="👤 User", value=str(member), inline=True)
-    embed.add_field(name="🧮 Remaining Members", value=str(human_member_count), inline=True)
-    embed.set_footer(text="Hope they come back someday 💭")
+    embed.add_field(name="User", value=str(member), inline=True)
+    embed.add_field(name="Remaining Members", value=str(human_member_count), inline=True)
+    embed.set_footer(text="Hope they come back someday.")
     await channel.send(embed=embed)
 
 
@@ -289,7 +204,7 @@ async def on_member_remove(member):
 async def bump_reminder():
     channel = bot.get_channel(REMINDER_CHANNEL_ID)
     if channel:
-        await channel.send("Don't forget to `/bump` the server! 🔔")
+        await channel.send("Don't forget to `/bump` the server!")
 
 
 @bot.tree.command(name="confess", description="Send an anonymous confession")
@@ -357,10 +272,10 @@ ROLEPLAY_ACTIONS = {
 @bot.tree.command(name="roleplay", description="Send a roleplay action to another member")
 @app_commands.describe(action="The action to perform", member="The target member")
 @app_commands.choices(action=[
-    app_commands.Choice(name="kiss", value="kiss"),
-    app_commands.Choice(name="hug", value="hug"),
+    app_commands.Choice(name="kiss",   value="kiss"),
+    app_commands.Choice(name="hug",    value="hug"),
     app_commands.Choice(name="cuddle", value="cuddle"),
-    app_commands.Choice(name="love", value="love"),
+    app_commands.Choice(name="love",   value="love"),
 ])
 async def roleplay(interaction: discord.Interaction, action: app_commands.Choice[str], member: discord.Member):
     verb, emoji = ROLEPLAY_ACTIONS[action.value]
@@ -401,63 +316,12 @@ async def timeout(interaction: discord.Interaction, member: discord.Member, minu
     await interaction.response.send_message(f"{member} was timed out for {minutes} minutes. Reason: {reason}")
 
 
-@bot.tree.command(name="hangman", description="Start a new Hangman game")
-async def hangman(interaction: discord.Interaction):
-    if interaction.channel.id != GAME_CHANNEL_ID:
-        await interaction.response.send_message("Hangman can only be played in the designated game channel.", ephemeral=True)
-        return
-    chosen_word = random.choice(hangman_word_pool).lower()
-    game = HangmanGame(chosen_word)
-    active_hangman_games[interaction.channel.id] = game
-
-    embed = discord.Embed(title="🎯 Hangman — New Game", color=discord.Color.blurple())
-    embed.description = (
-        f"{game.get_stage_art()}\n"
-        f"Word: `{game.display_word()}`\n"
-        f"Tries remaining: {game.remaining_tries}\n"
-        f"Use `/guess <letter>` to play."
-    )
-    await interaction.response.send_message(embed=embed)
+async def main():
+    async with bot:
+        await bot.add_cog(FilterCog(bot))
+        await bot.add_cog(FishCog(bot))
+        await bot.add_cog(HangmanCog(bot))
+        await bot.start(DISCORD_TOKEN)
 
 
-@bot.tree.command(name="guess", description="Guess a letter in the active Hangman game")
-@app_commands.describe(letter="The letter you want to guess")
-async def guess(interaction: discord.Interaction, letter: str):
-    if interaction.channel.id != GAME_CHANNEL_ID:
-        await interaction.response.send_message("You can only play in the designated game channel.", ephemeral=True)
-        return
-
-    if interaction.channel.id not in active_hangman_games:
-        await interaction.response.send_message("No active Hangman game. Start one with `/hangman`.", ephemeral=True)
-        return
-
-    if len(letter) != 1 or not letter.isalpha():
-        await interaction.response.send_message("Please enter a single alphabetic letter.", ephemeral=True)
-        return
-
-    game = active_hangman_games[interaction.channel.id]
-    correct, result_message = game.guess_letter(letter)
-
-    embed = discord.Embed(title="🎯 Hangman", color=discord.Color.orange())
-    embed.description = (
-        f"{game.get_stage_art()}\n"
-        f"{result_message}\n\n"
-        f"Word: `{game.display_word()}`\n"
-        f"Tries remaining: {game.remaining_tries}"
-    )
-
-    if game.is_won():
-        embed.title = "🎉 You Won!"
-        embed.color = discord.Color.green()
-        embed.description = f"Word: `{game.word}`\nYou guessed it correctly!"
-        del active_hangman_games[interaction.channel.id]
-    elif game.is_lost():
-        embed.title = "💀 Game Over"
-        embed.color = discord.Color.red()
-        embed.description = f"{game.get_stage_art()}\nOut of tries. The word was: `{game.word}`"
-        del active_hangman_games[interaction.channel.id]
-
-    await interaction.response.send_message(embed=embed)
-
-
-bot.run(DISCORD_TOKEN)
+asyncio.run(main())
