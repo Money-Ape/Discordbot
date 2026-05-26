@@ -29,7 +29,10 @@ A feature-rich Discord bot built with **discord.py**, offering moderation tools,
 | `/timeout <member> <minutes> [reason]` | Temporarily mute a member |
 | `/purge <amount>` | Bulk-delete messages in a channel *(owner only)* |
 
-The bot also **automatically deletes messages** containing banned words and warns the user.
+The bot also **automatically deletes messages** and warns the user for:
+- Messages containing hard slurs or hate speech
+- Discord server invite links (advertising)
+- Spam (10+ repeated characters in a row)
 
 ---
 
@@ -136,9 +139,12 @@ python Services/zizi.py
 ```
 DC-F/
 ├── BOT/
-│   └── config.py          # Loads environment variables
+│   └── config.py          # All configuration — token, channel IDs, role IDs
 ├── Services/
-│   └── zizi.py            # Main bot logic and all commands
+│   ├── zizi.py            # Core bot — events, XP system, all slash commands
+│   ├── filter.py          # Auto-moderation cog — slurs, invites, spam
+│   ├── hangman.py         # Hangman game cog
+│   └── fishgame.py        # Fish mini-game cog
 ├── .env                   # Secret token (not committed)
 ├── .gitignore
 └── README.md
