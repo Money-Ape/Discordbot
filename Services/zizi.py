@@ -5,7 +5,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'BOT'))
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View
-from discord import app_commands
 from datetime import timedelta
 import asyncio
 import random
@@ -27,7 +26,7 @@ from fishgame import FishCog
 from xpsystem import XPCog
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="?", intents=intents)
+bot = commands.Bot(command_prefix="?", intents=intents, help_command=None)
 
 HIGHLIGHTS_REACTION_THRESHOLD = 2
 
@@ -80,16 +79,15 @@ class VerificationView(View):
             await interaction.response.send_message("You have been verified!", ephemeral=True)
 
 
-def is_moderator(interaction: discord.Interaction) -> bool:
+def is_moderator(ctx: commands.Context) -> bool:
     return (
-        interaction.user.id == OWNER_ID
-        or discord.utils.get(interaction.user.roles, id=MOD_ROLE_ID) is not None
+        ctx.author.id == OWNER_ID
+        or discord.utils.get(ctx.author.roles, id=MOD_ROLE_ID) is not None
     )
 
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
     bot.add_view(VerificationView())
     print(f"Logged in as {bot.user}")
     if not bump_reminder.is_running():
@@ -194,47 +192,46 @@ async def bump_reminder():
         await channel.send("Don't forget to `/bump` the server!")
 
 
-@bot.tree.command(name="confess", description="Send an anonymous confession")
-@app_commands.describe(message="Your confession — no one will know it was you")
-async def confess(interaction: discord.Interaction, message: str):
+@bot.command(name="confess")
+async def confess(ctx: commands.Context, *, message: str):
     confession_channel = bot.get_channel(CONFESSION_CHANNEL_ID)
     if confession_channel:
         embed = discord.Embed(title="Anonymous Confession", description=message, color=discord.Color.purple())
         await confession_channel.send(embed=embed)
-    await interaction.response.send_message("Your confession was sent anonymously.", ephemeral=True)
+    await ctx.message.delete()
+    await ctx.send("Your confession was sent anonymously.", delete_after=3)
 
 
-@bot.tree.command(name="verifybutton", description="Post the verification button (owner only)")
-async def verifybutton(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
+@bot.command(name="verifybutton")
+async def verifybutton(ctx: commands.Context):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("Only the server owner can use this.")
         return
-    await interaction.channel.send("Click the button below to verify yourself!", view=VerificationView())
-    await interaction.response.send_message("Verification button posted.", ephemeral=True)
+    await ctx.channel.send("Click the button below to verify yourself!", view=VerificationView())
+    await ctx.send("Verification button posted.")
 
 
-@bot.tree.command(name="joke", description="Get a random joke")
-async def joke(interaction: discord.Interaction):
-    await interaction.response.send_message(random.choice(joke_list))
+@bot.command(name="joke")
+async def joke(ctx: commands.Context):
+    await ctx.send(random.choice(joke_list))
 
 
-@bot.tree.command(name="bully", description="Roast a member (owner only)")
-@app_commands.describe(member="The member to roast")
-async def bully(interaction: discord.Interaction, member: discord.Member):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
+@bot.command(name="bully")
+async def bully(ctx: commands.Context, member: discord.Member):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("Only the server owner can use this.")
         return
-    await interaction.response.send_message(f"{member.mention} {random.choice(roast_lines)}")
+    await ctx.send(f"{member.mention} {random.choice(roast_lines)}")
 
 
-@bot.tree.command(name="purge", description="Delete messages in bulk (owner only)")
-@app_commands.describe(amount="Number of messages to delete")
-async def purge(interaction: discord.Interaction, amount: int):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
+@bot.command(name="purge")
+async def purge(ctx: commands.Context, amount: int):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("Only the server owner can use this.")
         return
-    deleted = await interaction.channel.purge(limit=amount)
-    await interaction.response.send_message(f"Deleted {len(deleted)} messages.", ephemeral=True)
+    await ctx.message.delete()
+    deleted = await ctx.channel.purge(limit=amount)
+    await ctx.send(f"Deleted {len(deleted)} messages.", delete_after=3)
 
 
 ROLEPLAY_ACTIONS = {
@@ -245,51 +242,64 @@ ROLEPLAY_ACTIONS = {
 }
 
 
-@bot.tree.command(name="roleplay", description="Send a roleplay action to another member")
-@app_commands.describe(action="The action to perform", member="The target member")
-@app_commands.choices(action=[
-    app_commands.Choice(name="kiss",   value="kiss"),
-    app_commands.Choice(name="hug",    value="hug"),
-    app_commands.Choice(name="cuddle", value="cuddle"),
-    app_commands.Choice(name="love",   value="love"),
-])
-async def roleplay(interaction: discord.Interaction, action: app_commands.Choice[str], member: discord.Member):
-    verb, emoji = ROLEPLAY_ACTIONS[action.value]
-    embed = discord.Embed().set_image(url=roleplay_gifs[action.value])
-    await interaction.response.send_message(
-        f"{interaction.user.mention} {verb} {member.mention}! {emoji}",
+@bot.command(name="roleplay")
+async def roleplay(ctx: commands.Context, action: str, member: discord.Member):
+    action = action.lower()
+    if action not in ROLEPLAY_ACTIONS:
+        await ctx.send("Invalid action. Choose from: kiss, hug, cuddle, love")
+        return
+    verb, emoji = ROLEPLAY_ACTIONS[action]
+    embed = discord.Embed().set_image(url=roleplay_gifs[action])
+    await ctx.send(
+        f"{ctx.author.mention} {verb} {member.mention}! {emoji}",
         embed=embed,
     )
 
 
-@bot.tree.command(name="kick", description="Kick a member from the server")
-@app_commands.describe(member="The member to kick", reason="Reason for the kick")
-async def kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if not is_moderator(interaction):
-        await interaction.response.send_message("You don't have permission to kick members.", ephemeral=True)
+@bot.command(name="kick")
+async def kick(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason provided"):
+    if not is_moderator(ctx):
+        await ctx.send("You don't have permission to kick members.")
         return
     await member.kick(reason=reason)
-    await interaction.response.send_message(f"{member} was kicked. Reason: {reason}")
+    await ctx.send(f"{member} was kicked. Reason: {reason}")
 
 
-@bot.tree.command(name="ban", description="Permanently ban a member")
-@app_commands.describe(member="The member to ban", reason="Reason for the ban")
-async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
-    if not is_moderator(interaction):
-        await interaction.response.send_message("You don't have permission to ban members.", ephemeral=True)
+@bot.command(name="ban")
+async def ban(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason provided"):
+    if not is_moderator(ctx):
+        await ctx.send("You don't have permission to ban members.")
         return
     await member.ban(reason=reason)
-    await interaction.response.send_message(f"{member} was banned. Reason: {reason}")
+    await ctx.send(f"{member} was banned. Reason: {reason}")
 
 
-@bot.tree.command(name="timeout", description="Temporarily mute a member")
-@app_commands.describe(member="The member to timeout", minutes="Duration in minutes", reason="Reason for the timeout")
-async def timeout(interaction: discord.Interaction, member: discord.Member, minutes: int, reason: str = "No reason provided"):
-    if not is_moderator(interaction):
-        await interaction.response.send_message("You don't have permission to timeout members.", ephemeral=True)
+@bot.command(name="timeout")
+async def timeout_cmd(ctx: commands.Context, member: discord.Member, minutes: int, *, reason: str = "No reason provided"):
+    if not is_moderator(ctx):
+        await ctx.send("You don't have permission to timeout members.")
         return
     await member.timeout(timedelta(minutes=minutes), reason=reason)
-    await interaction.response.send_message(f"{member} was timed out for {minutes} minutes. Reason: {reason}")
+    await ctx.send(f"{member} was timed out for {minutes} minutes. Reason: {reason}")
+
+
+@bot.command(name="help")
+async def help_command(ctx: commands.Context):
+    embed = discord.Embed(title="Bot Commands", color=discord.Color.blurple())
+    embed.add_field(name="?confess <message>", value="Send an anonymous confession", inline=False)
+    embed.add_field(name="?verifybutton", value="Post the verification button (owner only)", inline=False)
+    embed.add_field(name="?joke", value="Get a random joke", inline=False)
+    embed.add_field(name="?bully <@member>", value="Roast a member (owner only)", inline=False)
+    embed.add_field(name="?purge <amount>", value="Delete messages in bulk (owner only)", inline=False)
+    embed.add_field(name="?roleplay <action> <@member>", value="Roleplay action — kiss, hug, cuddle, love", inline=False)
+    embed.add_field(name="?kick <@member> [reason]", value="Kick a member from the server", inline=False)
+    embed.add_field(name="?ban <@member> [reason]", value="Permanently ban a member", inline=False)
+    embed.add_field(name="?timeout <@member> <minutes> [reason]", value="Temporarily mute a member", inline=False)
+    embed.add_field(name="?hangman", value="Start a Hangman game in the game channel", inline=False)
+    embed.add_field(name="?guess <letter>", value="Guess a letter in the active Hangman game", inline=False)
+    embed.add_field(name="?xp", value="Check your XP and level progress", inline=False)
+    embed.add_field(name="?xpleaderboard", value="View the top XP earners", inline=False)
+    await ctx.send(embed=embed)
 
 
 async def main():

@@ -1,7 +1,6 @@
 import discord
 import random
 from discord.ext import commands
-from discord import app_commands
 from config import GAME_CHANNEL_ID
 
 hangman_word_pool = [
@@ -56,59 +55,50 @@ class HangmanCog(commands.Cog):
         self.bot = bot
         self.active_games = {}
 
-    @app_commands.command(name="hangman", description="Start a new Hangman game")
-    async def hangman(self, interaction: discord.Interaction):
-        if interaction.channel.id != GAME_CHANNEL_ID:
-            await interaction.response.send_message(
-                "Hangman can only be played in the designated game channel.", ephemeral=True
-            )
+    @commands.command(name="hangman")
+    async def hangman(self, ctx: commands.Context):
+        if ctx.channel.id != GAME_CHANNEL_ID:
+            await ctx.send("Hangman can only be played in the designated game channel.")
             return
 
         chosen_word = random.choice(hangman_word_pool)
         game = HangmanGame(chosen_word)
-        self.active_games[interaction.channel.id] = game
+        self.active_games[ctx.channel.id] = game
 
         embed = discord.Embed(title="Hangman — New Game", color=discord.Color.blurple())
         embed.description = (
             f"{game.get_stage_art()}\n"
             f"Word: `{game.display_word()}`\n"
             f"Tries remaining: {game.remaining_tries}\n"
-            f"Use `/guess <letter>` to play."
+            f"Use `?guess <letter>` to play."
         )
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="guess", description="Guess a letter in the active Hangman game")
-    @app_commands.describe(letter="The letter you want to guess")
-    async def guess(self, interaction: discord.Interaction, letter: str):
-        if interaction.channel.id != GAME_CHANNEL_ID:
-            await interaction.response.send_message(
-                "You can only play in the designated game channel.", ephemeral=True
-            )
+    @commands.command(name="guess")
+    async def guess(self, ctx: commands.Context, letter: str):
+        if ctx.channel.id != GAME_CHANNEL_ID:
+            await ctx.send("You can only play in the designated game channel.")
             return
 
-        if interaction.channel.id not in self.active_games:
-            await interaction.response.send_message(
-                "No active Hangman game. Start one with `/hangman`.", ephemeral=True
-            )
+        if ctx.channel.id not in self.active_games:
+            await ctx.send("No active Hangman game. Start one with `?hangman`.")
             return
 
         if len(letter) != 1 or not letter.isalpha():
-            await interaction.response.send_message(
-                "Please enter a single alphabetic letter.", ephemeral=True
-            )
+            await ctx.send("Please enter a single alphabetic letter.")
             return
 
-        game = self.active_games[interaction.channel.id]
+        game = self.active_games[ctx.channel.id]
         _, result_message = game.guess_letter(letter)
 
         if game.is_won():
             embed = discord.Embed(title="You Won!", color=discord.Color.green())
             embed.description = f"Word: `{game.word}`\nYou guessed it correctly!"
-            del self.active_games[interaction.channel.id]
+            del self.active_games[ctx.channel.id]
         elif game.is_lost():
             embed = discord.Embed(title="Game Over", color=discord.Color.red())
             embed.description = f"{game.get_stage_art()}\nOut of tries. The word was: `{game.word}`"
-            del self.active_games[interaction.channel.id]
+            del self.active_games[ctx.channel.id]
         else:
             embed = discord.Embed(title="Hangman", color=discord.Color.orange())
             embed.description = (
@@ -118,7 +108,7 @@ class HangmanCog(commands.Cog):
                 f"Tries remaining: {game.remaining_tries}"
             )
 
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
