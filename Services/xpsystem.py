@@ -197,7 +197,7 @@ class XPCog(commands.Cog):
                 inline=False,
             )
 
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
