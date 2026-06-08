@@ -107,14 +107,10 @@ Members earn **5 XP per message** sent in the designated XP channel. The bot aut
 git clone https://github.com/tishxkpr21-tech/Discordbot.git
 cd Discordbot
 
-# Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # macOS/Linux
-
-# Install dependencies
-pip install discord.py python-dotenv
+chmod +x run.sh
+./run.sh
 ```
+# bash script will automatically install the required modules for the System, and executes the bot everytime along with checking the dependencies...
 
 ### Configuration
 
