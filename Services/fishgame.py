@@ -1,5 +1,4 @@
-import asyncio
-import discord
+import asyncio, discord
 from discord.ext import commands
 from discord.ui import View
 from collections import defaultdict

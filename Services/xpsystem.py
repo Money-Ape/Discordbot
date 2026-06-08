@@ -1,5 +1,4 @@
-import discord
-import json
+import discord, json
 from discord.ext import commands
 from pathlib import Path
 from datetime import datetime
@@ -30,7 +29,6 @@ VOICE_ROLES = {
     "Voice Legend": 1000 * 60,
 }
 
-
 class UserXPData:
     def __init__(self):
         self.message_count = 0
@@ -50,7 +48,6 @@ class UserXPData:
             "total_xp": self.total_xp,
             "level": self.level,
         }
-
     @staticmethod
     def from_dict(data):
         user = UserXPData()
@@ -61,7 +58,6 @@ class UserXPData:
         user.total_xp = data.get("total_xp", 0)
         user.level = data.get("level", 1)
         return user
-
 
 class XPCog(commands.Cog):
     def __init__(self, bot):
@@ -198,7 +194,6 @@ class XPCog(commands.Cog):
             )
 
         await ctx.send(embed=embed)
-
 
 async def setup(bot):
     await bot.add_cog(XPCog(bot))

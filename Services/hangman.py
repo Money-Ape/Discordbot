@@ -1,5 +1,4 @@
-import discord
-import random
+import discord, random
 from discord.ext import commands
 from config import GAME_CHANNEL_ID
 
@@ -9,7 +8,6 @@ hangman_word_pool = [
     "moderator", "hangman", "confetti", "timeout", "community",
     "database", "network", "password", "channel", "website",
 ]
-
 
 class HangmanGame:
     STAGES = [
@@ -48,7 +46,6 @@ class HangmanGame:
 
     def get_stage_art(self):
         return self.STAGES[6 - self.remaining_tries]
-
 
 class HangmanCog(commands.Cog):
     def __init__(self, bot):
@@ -107,9 +104,7 @@ class HangmanCog(commands.Cog):
                 f"Word: `{game.display_word()}`\n"
                 f"Tries remaining: {game.remaining_tries}"
             )
-
         await ctx.send(embed=embed)
-
 
 async def setup(bot):
     await bot.add_cog(HangmanCog(bot))

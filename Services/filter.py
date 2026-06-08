@@ -1,5 +1,4 @@
-import re
-import discord
+import re, discord
 from discord.ext import commands
 
 banned_words = {
