@@ -110,7 +110,7 @@ cd Discordbot
 chmod +x run.sh
 ./run.sh
 ```
-# bash script will automatically install the required modules for the System, and executes the bot everytime along with checking the dependencies...
+## bash script will automatically install the required modules for the System, and executes the bot everytime along with checking the dependencies...
 
 ### Configuration
 
